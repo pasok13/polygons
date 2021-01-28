@@ -1,296 +1,110 @@
-<!doctype html>
-<html>
-
-<head>
-  <meta charset="utf-8">
-  <title>Untitled Document</title>
-  <style type="text/css">
-    html,
-    body {
-      padding: 0;
-      margin: 0;
-      height: 100%;
-    }
-
-    .map {
-      height: 60%;
-    }
-  </style>
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC930jynRPU70IS8TfIWmJ6VKRoTmdZ1_Q&libraries=drawing&callback=initialize"
-    async defer></script>
-
-</head>
-
-<body>
-  <div class="map" id="map_in"></div>
-  <table class='' border="1" cellpadding="0" cellspacing="0" align="center" width="100%">
-    <tbody></tbody>
-    <tr>
-      <td style='text-align: left;'>Clear</td>
-      <td style='text-align: center;'>:</td>
-      <td style='text-align: left;'><input id="clear_shapes" value="Clear" type="button" /></td>
-    </tr>
-    <tr>
-      <td style='text-align: left;'>Save Encode</td>
-      <td style='text-align: center;'>:</td>
-      <td style='text-align: left;'><input id="save_encoded" value="Get Coordinat Encode" type="button" />
-      </td>
-    </tr>
-    <tr>
-      <td style='text-align: left;'>Save Decode</td>
-      <td style='text-align: center;'>:</td>
-      <td style='text-align: left;'><input id="save_raw" value="Get Coordinat Decode" type="button" />
-      </td>
-    </tr>
-    <tr>
-      <td style='text-align: left;'>Copy To Bottom Map</td>
-      <td style='text-align: center;'>:</td>
-      <td style='text-align: left;'><input id="restore" value="Copy Maps" type="button" />
-      </td>
-    </tr>
-    <tr>
-      <td style='text-align: left;' valign="top">Coordinat</td>
-      <td style='text-align: center;'>:</td>
-      <td style='text-align: left;'><textarea id="data" value="" rows="5" style="width:650px;"></textarea>
-      </td>
-    </tr>
-    </tbody>
-  </table>
-  <div class="map" id="map_out"></div>
-  <script>
-    function initialize() {
-      var goo = google.maps,
-        map_in = new goo.Map(document.getElementById('map_in'), {
-          zoom: 13,
-          center: new goo.LatLng(0.554284, 123.049195)
-        }),
-        map_out = new goo.Map(document.getElementById('map_out'), {
-          zoom: 13,
-          center: new goo.LatLng(0.554284, 123.049195)
-        }),
-        shapes = [],
-        selected_shape = null,
-        drawman = new goo.drawing.DrawingManager({
-          map: map_in
-        }),
-        byId = function (s) {
-          return document.getElementById(s)
-        },
-        clearSelection = function () {
-          if (selected_shape) {
-            selected_shape.set((selected_shape.type ===
-              google.maps.drawing.OverlayType.MARKER
-            ) ? 'draggable' : 'editable', false);
-            selected_shape = null;
-          }
-        },
-        setSelection = function (shape) {
-          clearSelection();
-          selected_shape = shape;
-
-          selected_shape.set((selected_shape.type ===
-            google.maps.drawing.OverlayType.MARKER
-          ) ? 'draggable' : 'editable', true);
-
-        },
-        clearShapes = function () {
-          for (var i = 0; i < shapes.length; ++i) {
-            shapes[i].setMap(null);
-          }
-          shapes = [];
-        };
-      map_in.bindTo('center', map_out, 'center');
-      map_in.bindTo('zoom', map_out, 'zoom');
-
-      goo.event.addListener(drawman, 'overlaycomplete', function (e) {
-        var shape = e.overlay;
-        shape.type = e.type;
-        goo.event.addListener(shape, 'click', function () {
-          setSelection(this);
-        });
-        setSelection(shape);
-        shapes.push(shape);
-      });
-
-      goo.event.addListener(map_in, 'click', clearSelection);
-      goo.event.addDomListener(byId('clear_shapes'), 'click', clearShapes);
-      goo.event.addDomListener(byId('save_encoded'), 'click', function () {
-        var data = IO.IN(shapes, true);
-        byId('data').value = JSON.stringify(data);
-      });
-      goo.event.addDomListener(byId('save_raw'), 'click', function () {
-        var data = IO.IN(shapes, false);
-        byId('data').value = JSON.stringify(data);
-      });
-      goo.event.addDomListener(byId('restore'), 'click', function () {
-        if (this.shapes) {
-          for (var i = 0; i < this.shapes.length; ++i) {
-            this.shapes[i].setMap(null);
-          }
-        }
-        this.shapes = IO.OUT(JSON.parse(byId('data').value), map_out);
-      });
-
-    }
-
-
-    var IO = {
-      //returns array with storable google.maps.Overlay-definitions
-      IN: function (arr, //array with google.maps.Overlays
-        encoded //boolean indicating whether pathes should be stored encoded
-      ) {
-        var shapes = [],
-          goo = google.maps,
-          shape, tmp;
-
-        for (var i = 0; i < arr.length; i++) {
-          shape = arr[i];
-          tmp = {
-            type: this.t_(shape.type),
-            id: shape.id || null
-          };
-
-
-          switch (tmp.type) {
-            case 'CIRCLE':
-              tmp.radius = shape.getRadius();
-              tmp.geometry = this.p_(shape.getCenter());
-              break;
-            case 'MARKER':
-              tmp.geometry = this.p_(shape.getPosition());
-              break;
-            case 'RECTANGLE':
-              tmp.geometry = this.b_(shape.getBounds());
-              break;
-            case 'POLYLINE':
-              tmp.geometry = this.l_(shape.getPath(), encoded);
-              break;
-            case 'POLYGON':
-              tmp.geometry = this.m_(shape.getPaths(), encoded);
-
-              break;
-          }
-          shapes.push(tmp);
-        }
-
-        return shapes;
-      },
-      //returns array with google.maps.Overlays
-      OUT: function (arr, //array containg the stored shape-definitions
-        map //map where to draw the shapes
-      ) {
-        var shapes = [],
-          goo = google.maps,
-          map = map || null,
-          shape, tmp;
-
-        for (var i = 0; i < arr.length; i++) {
-          shape = arr[i];
-
-          switch (shape.type) {
-            case 'CIRCLE':
-              tmp = new goo.Circle({
-                radius: Number(shape.radius),
-                center: this.pp_.apply(this, shape.geometry)
-              });
-              break;
-            case 'MARKER':
-              tmp = new goo.Marker({
-                position: this.pp_.apply(this, shape.geometry)
-              });
-              break;
-            case 'RECTANGLE':
-              tmp = new goo.Rectangle({
-                bounds: this.bb_.apply(this, shape.geometry)
-              });
-              break;
-            case 'POLYLINE':
-              tmp = new goo.Polyline({
-                path: this.ll_(shape.geometry)
-              });
-              break;
-            case 'POLYGON':
-              tmp = new goo.Polygon({
-                paths: this.mm_(shape.geometry)
-              });
-
-              break;
-          }
-          tmp.setValues({
-            map: map,
-            id: shape.id
-          })
-          shapes.push(tmp);
-        }
-        return shapes;
-      },
-      l_: function (path, e) {
-        path = (path.getArray) ? path.getArray() : path;
-        if (e) {
-          return google.maps.geometry.encoding.encodePath(path);
-        } else {
-          var r = [];
-          for (var i = 0; i < path.length; ++i) {
-            r.push(this.p_(path[i]));
-          }
-          return r;
-        }
-      },
-      ll_: function (path) {
-        if (typeof path === 'string') {
-          return google.maps.geometry.encoding.decodePath(path);
-        } else {
-          var r = [];
-          for (var i = 0; i < path.length; ++i) {
-            r.push(this.pp_.apply(this, path[i]));
-          }
-          return r;
-        }
-      },
-
-      m_: function (paths, e) {
-        var r = [];
-        paths = (paths.getArray) ? paths.getArray() : paths;
-        for (var i = 0; i < paths.length; ++i) {
-          r.push(this.l_(paths[i], e));
-        }
-        return r;
-      },
-      mm_: function (paths) {
-        var r = [];
-        for (var i = 0; i < paths.length; ++i) {
-          r.push(this.ll_.call(this, paths[i]));
-
-        }
-        return r;
-      },
-      p_: function (latLng) {
-        return ([latLng.lat(), latLng.lng()]);
-      },
-      pp_: function (lat, lng) {
-        return new google.maps.LatLng(lat, lng);
-      },
-      b_: function (bounds) {
-        return ([this.p_(bounds.getSouthWest()),
-          this.p_(bounds.getNorthEast())
-        ]);
-      },
-      bb_: function (sw, ne) {
-        return new google.maps.LatLngBounds(this.pp_.apply(this, sw),
-          this.pp_.apply(this, ne));
-      },
-      t_: function (s) {
-        var t = ['CIRCLE', 'MARKER', 'RECTANGLE', 'POLYLINE', 'POLYGON'];
-        for (var i = 0; i < t.length; ++i) {
-          if (s === google.maps.drawing.OverlayType[t[i]]) {
-            return t[i];
-          }
-        }
-      }
-
-    }
-  </script>
-</body>
+!DOCTYPE html>
+	<head>
+		<link rel="stylesheet" href="style.css">
+		<script type="text/javascript" src="polygon.js"></script>
+		<script type="text/javascript" src="input_handlers.js"></script>
+		<script>
+			var pgdCanvas;
+			var ctx;
+			var polygon;
+			
+			function init(){
+				var numSides = 5;
+				var sideLength = 100;
+				var xCoord = 0;
+				var yCoord = 0;
+				
+				polygon = new Polygon(numSides, sideLength, xCoord, yCoord);
+				
+				var numSidesInput = document.getElementById("num_sides_input");
+				numSidesInput.value = numSides;
+				
+				var sideLengthInput = document.getElementById("side_length_input");
+				sideLengthInput.value = sideLength;
+				
+				var xCoordInput = document.getElementById("x_coord_input");
+				xCoordInput.value = xCoord;
+				
+				var yCoordInput = document.getElementById("y_coord_input");
+				yCoordInput.value = yCoord;
+				
+				pgdCanvas = document.getElementById("pgd_canvas");
+				ctx = pgd_canvas.getContext("2d");
+				
+				draw();
+			}
+			function draw(){
+				ctx.clearRect(0, 0, pgdCanvas.width, pgdCanvas.height);
+				
+				var numSides = polygon.getNumSides();
+				var apothem = polygon.getApothem();
+				var angle_inc = (Math.PI*2)/numSides;
+				
+				for(var angle = Math.PI/2;angle<(Math.PI*2)+(Math.PI/2);angle+=angle_inc){
+					// The center x,y coordinates of the side that will drawn
+					var c_x = (pgdCanvas.width/2) + polygon.getXCoord()+apothem*Math.cos(angle);
+					var c_y = (pgdCanvas.height/2) + polygon.getYCoord()+apothem*Math.sin(angle);
+					
+					// Draw apothems if the "Draw Apothems" check box is checked
+					if(document.getElementById("draw_apothems").checked){
+						ctx.beginPath();
+						ctx.moveTo((pgdCanvas.width/2) + polygon.getXCoord(),(pgdCanvas.height/2) + polygon.getYCoord());
+						ctx.lineTo(c_x, c_y);
+						ctx.stroke();
+					}
+					
+					// Draw half of a side
+					ctx.beginPath();
+					ctx.moveTo(c_x-(polygon.getSideLength()/2)*Math.cos(angle-(Math.PI/2)),
+								c_y-(polygon.getSideLength()/2)*Math.sin(angle-(Math.PI/2)));
+					ctx.lineTo(c_x, c_y);
+					ctx.stroke();
+					
+					// Draw the other half of a side
+					ctx.beginPath();
+					ctx.moveTo(c_x-(polygon.getSideLength()/2)*Math.cos(angle+(Math.PI/2)),
+								c_y-(polygon.getSideLength()/2)*Math.sin(angle+(Math.PI/2)));
+					ctx.lineTo(c_x, c_y);
+					ctx.stroke();
+				}
+				
+				ctx.font = "12px Arial";
+				ctx.fillText("Apothem Length: " + apothem.toFixed(2),10, 550);
+				ctx.fillText("Perimeter Length: " + polygon.getPerimeter().toFixed(2), 10, 565);
+				ctx.fillText("Perimeter/2*apothem: " + (polygon.getPerimeter()/(2*apothem)).toFixed(5), 10, 580);
+			}
+	</script>
+	</head>
+	
+	<body onload="init()">
+		<canvas id="pgd_canvas" width="600" height="600"></canvas>
+		<div id="control_panel">
+			Number of sides<br>
+			<div id="num_sides_div" class="input_div">
+				<input id="num_sides_decrement" type="button" value="-" onclick="onSidesDecrement()"></input>
+				<input id="num_sides_input" type="text" class="num_input" onchange="onSidesInputChanged()"></input>
+				<input id="num_sides_increment" type="button" value="+" onclick="onSidesIncrement()"></input>
+			</div>
+			Side Length<br>
+			<div id="side_length_div" class="input_div">
+				<input id="side_length_decrement" type="button" value="-" onclick="onLengthDecrement()"></input>
+				<input id="side_length_input" type="text" class="num_input" onchange="onLengthInputChanged()"></input>
+				<input id="side_length_increment" type="button" value="+" onclick="onLengthIncrement()"></input>
+			</div>
+			X Coordinate<br>
+			<div id="x_coord_div" class="input_div">
+				<input id="x_coord_decrement" type="button" value="-" onclick="onXDecrement()"></input>
+				<input id="x_coord_input" type="text" class="num_input" onchange="onXCoordInputChanged()"></input>
+				<input id="x_coord_increment" type="button" value="+" onclick="onXIncrement()"></input>
+			</div>
+			Y Coordinate<br>
+			<div id="y_coord_div" class="input_div">
+				<input id="y_coord_decrement" type="button" value="-" onclick="onYDecrement()"></input>
+				<input id="y_coord_input" type="text" class="num_input" onchange="onYCoordInputChanged()"></input>
+				<input id="y_coord_increment" type="button" value="+" onclick="onYIncrement()"></input>
+			</div>
+			<input id="draw_apothems" type="checkbox" checked="true" onclick="draw()">Draw Apothems</input>
+		</div>
+	</body>
 
 </html>
